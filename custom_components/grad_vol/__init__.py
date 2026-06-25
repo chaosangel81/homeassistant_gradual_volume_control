@@ -70,8 +70,11 @@ async def async_setup(hass, config):
                 sleeptime = span / steps
                 _LOGGER.debug(f"Gradually adjusting {entity_id} from {current} to {target} in {steps} steps of {step} over {span}s.")
 
+                _LOGGER.debug(f"Starting number ramp: {current} -> {target} over {span}s")
+
                 while abs(target - current) >= step * 0.5:
                     if entity_id not in volume_tasks:
+                        _LOGGER.debug(f"Volume task cancelled for {entity_id}")
                         break
                     if target < current:
                         current = _round_to_step(current - step, step)
@@ -79,15 +82,23 @@ async def async_setup(hass, config):
                         current = _round_to_step(current + step, step)
                     if abs(current - target) < 0.001:
                         current = target
-                    await hass.services.async_call('number', 'set_value', {
-                        'entity_id': entity_id, 'value': current
-                    })
+                    _LOGGER.debug(f"Setting {entity_id} to {current}")
+                    try:
+                        await hass.services.async_call('number', 'set_value', {
+                            'entity_id': entity_id, 'value': current
+                        }, blocking=True)
+                    except Exception as e:
+                        _LOGGER.error(f"Failed to set {entity_id} to {current}: {e}")
+                        break
                     await asyncio.sleep(sleeptime)
 
                 _LOGGER.debug(f"Final {entity_id} set to {target}.")
-                await hass.services.async_call('number', 'set_value', {
-                    'entity_id': entity_id, 'value': target
-                })
+                try:
+                    await hass.services.async_call('number', 'set_value', {
+                        'entity_id': entity_id, 'value': target
+                    }, blocking=True)
+                except Exception as e:
+                    _LOGGER.error(f"Failed final set for {entity_id}: {e}")
             else:
                 current = state.attributes.get('volume_level')
                 if current is None:
