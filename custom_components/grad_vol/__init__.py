@@ -86,12 +86,6 @@ async def async_setup(hass, config):
                 await hass.services.async_call('number', 'set_value', {
                     'entity_id': entity_id, 'value': target
                 })
-                    await asyncio.sleep(sleeptime)
-
-                _LOGGER.debug(f"Final {entity_id} set to {target}.")
-                await hass.services.async_call('number', 'set_value', {
-                    'entity_id': entity_id, 'value': target
-                }, blocking=True)
             else:
                 current = state.attributes.get('volume_level')
                 if current is None:
