@@ -29,13 +29,9 @@ async def async_setup(hass, config):
             if entity_id in volume_tasks:
                 volume_tasks[entity_id].cancel()
             tasks[entity_id] = hass.async_create_task(async_adjust_volume(entity_id, target_volume, span, se))
-        _LOGGER.debug(f"Tasks: {tasks}")
         volume_tasks.update(tasks)
-        _LOGGER.debug(f"Volume tasks: {volume_tasks}")
-        _LOGGER.debug("starting tasks with start_event")
-        se.set()  # Start all tasks at once
+        se.set()
         await asyncio.gather(*tasks.values())
-        _LOGGER.debug("Service_call finished")
 
     def _get_step(entity_id):
         step = 0.01
@@ -52,13 +48,11 @@ async def async_setup(hass, config):
 
         Supports media_player (0-1 volume_level) and number (raw value, e.g. dB) entities.
         """
-        _LOGGER.debug("Waiting for start signal...")
         await start_event.wait()
-        _LOGGER.debug(f"Start signal received.")
         try:
             state = hass.states.get(entity_id)
             if not state or state.state in ('off', 'unavailable', 'unknown'):
-                _LOGGER.warning(f"Entity {entity_id} state={state.state if state else 'NOT FOUND'}, skipping volume adjustment.")
+                _LOGGER.debug(f"Entity {entity_id} unavailable, skipping.")
                 return
 
             if state.domain == 'number':
@@ -68,15 +62,10 @@ async def async_setup(hass, config):
                 diff = abs(target - current)
                 steps = max(int(diff / step), 1)
                 sleeptime = span / steps
-                _LOGGER.debug(f"Gradually adjusting {entity_id} from {current} to {target} in {steps} steps of {step} over {span}s.")
-
-                _LOGGER.debug(f"Starting number ramp: {current} -> {target} over {span}s")
-
-                _LOGGER.warning(f"Starting number ramp: {current} -> {target} over {span}s")
+                _LOGGER.debug(f"Ramping {entity_id}: {current} -> {target} in {steps} steps over {span}s")
 
                 while abs(target - current) >= step * 0.5:
                     if entity_id not in volume_tasks:
-                        _LOGGER.warning(f"Volume task cancelled for {entity_id}")
                         break
                     if target < current:
                         current = _round_to_step(current - step, step)
@@ -84,33 +73,25 @@ async def async_setup(hass, config):
                         current = _round_to_step(current + step, step)
                     if abs(current - target) < 0.001:
                         current = target
-                    _LOGGER.warning(f"Setting {entity_id} to {current}")
-                    try:
-                        await hass.services.async_call('number', 'set_value', {
-                            'entity_id': entity_id, 'value': current
-                        }, blocking=True)
-                    except Exception as e:
-                        _LOGGER.warning(f"Failed to set {entity_id} to {current}: {e}")
-                        break
+                    await hass.services.async_call('number', 'set_value', {
+                        'entity_id': entity_id, 'value': current
+                    }, blocking=True)
                     await asyncio.sleep(sleeptime)
 
-                _LOGGER.warning(f"Final {entity_id} set to {target}.")
-                try:
-                    await hass.services.async_call('number', 'set_value', {
-                        'entity_id': entity_id, 'value': target
-                    }, blocking=True)
-                except Exception as e:
-                    _LOGGER.warning(f"Failed final set for {entity_id}: {e}")
+                _LOGGER.debug(f"Final {entity_id} set to {target}.")
+                await hass.services.async_call('number', 'set_value', {
+                    'entity_id': entity_id, 'value': target
+                }, blocking=True)
             else:
                 current = state.attributes.get('volume_level')
                 if current is None:
-                    _LOGGER.debug(f"Volume level not found for {entity_id}, skipping volume adjustment.")
+                    _LOGGER.debug(f"Volume level not found for {entity_id}, skipping.")
                     return
 
                 current = round(float(current), 2)
                 steps = abs(int((current - target_volume) / 0.01))
                 sleeptime = span / max(steps, 1)
-                _LOGGER.debug(f"Gradually adjusting {entity_id} from {current} to {target_volume} in {steps} steps over {span}s.")
+                _LOGGER.debug(f"Ramping {entity_id}: {current} -> {target_volume} in {steps} steps over {span}s")
 
                 while abs(current - target_volume) >= 0.02:
                     if entity_id not in volume_tasks:
@@ -128,13 +109,11 @@ async def async_setup(hass, config):
                 await hass.services.async_call('media_player', 'volume_set', {
                     'entity_id': entity_id, 'volume_level': target_volume
                 })
-            _LOGGER.debug("finished")
 
         except asyncio.CancelledError:
             _LOGGER.debug(f"Volume adjustment for {entity_id} was cancelled.")
         finally:
             volume_tasks.pop(entity_id, None)
-            _LOGGER.debug(f"Volume task for {entity_id} removed from tasks.")
 
     async def async_cancel(call):
         """Cancel the volume adjustment for a specific entity or all."""
@@ -151,5 +130,5 @@ async def async_setup(hass, config):
 
     hass.services.async_register(DOMAIN, "set_volume", async_handle_set_volume)
     hass.services.async_register(DOMAIN, "cancel_all", async_cancel)
-    
+
     return True
