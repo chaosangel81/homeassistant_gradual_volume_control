@@ -71,21 +71,22 @@ async def async_setup(hass, config):
                     if entity_id not in volume_tasks:
                         break
                     if target < current:
-                        current = current - step
+                        current = max(target, current - step)
                     else:
-                        current = current + step
+                        current = min(target, current + step)
                     current = round(current, 1)
-                    if abs(current - target) < 0.05:
-                        current = target
                     await hass.services.async_call('number', 'set_value', {
                         'entity_id': entity_id, 'value': current
                     })
+                    if current == target:
+                        break
                     await asyncio.sleep(sleeptime)
 
                 _LOGGER.debug(f"Final {entity_id} set to {target}.")
-                await hass.services.async_call('number', 'set_value', {
-                    'entity_id': entity_id, 'value': target
-                })
+                if current != target:
+                    await hass.services.async_call('number', 'set_value', {
+                        'entity_id': entity_id, 'value': target
+                    })
             else:
                 current = state.attributes.get('volume_level')
                 if current is None:
