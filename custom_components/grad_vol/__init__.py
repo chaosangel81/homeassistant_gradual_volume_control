@@ -57,25 +57,35 @@ async def async_setup(hass, config):
 
             if state.domain == 'number':
                 current = float(state.state)
-                step = _get_step(entity_id)
-                target = _round_to_step(float(target_volume), step)
+                target = _round_to_step(float(target_volume), _get_step(entity_id))
                 diff = abs(target - current)
+                entity_step = _get_step(entity_id)
+                step = max(diff / 80, entity_step)
+                step = round(step / entity_step) * entity_step
+                step = max(step, entity_step)
                 steps = max(int(diff / step), 1)
                 sleeptime = span / steps
-                _LOGGER.debug(f"Ramping {entity_id}: {current} -> {target} in {steps} steps over {span}s")
+                _LOGGER.debug(f"Ramping {entity_id}: {current} -> {target} in {steps} steps of {step} over {span}s")
 
                 while abs(target - current) >= step * 0.5:
                     if entity_id not in volume_tasks:
                         break
                     if target < current:
-                        current = _round_to_step(current - step, step)
+                        current = current - step
                     else:
-                        current = _round_to_step(current + step, step)
-                    if abs(current - target) < 0.001:
+                        current = current + step
+                    current = round(current, 1)
+                    if abs(current - target) < 0.05:
                         current = target
                     await hass.services.async_call('number', 'set_value', {
                         'entity_id': entity_id, 'value': current
-                    }, blocking=True)
+                    })
+                    await asyncio.sleep(sleeptime)
+
+                _LOGGER.debug(f"Final {entity_id} set to {target}.")
+                await hass.services.async_call('number', 'set_value', {
+                    'entity_id': entity_id, 'value': target
+                })
                     await asyncio.sleep(sleeptime)
 
                 _LOGGER.debug(f"Final {entity_id} set to {target}.")
