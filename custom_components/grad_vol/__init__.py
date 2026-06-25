@@ -9,12 +9,18 @@ async def async_setup(hass, config):
     volume_tasks = {}
     _LOGGER.debug("Setting up Gradual Volume component")
 
+    def _normalize_entity_ids(call):
+        raw = call.data.get('entity_id', [])
+        if isinstance(raw, str):
+            return [raw]
+        return list(raw)
+
     async def async_handle_set_volume(call):
         """Handle the service call for gradually setting volume."""
         _LOGGER.debug("Gradual Volume service called")
         _LOGGER.debug(f"Service data: {call.data}")
 
-        entity_ids = call.data.get('entity_id', [])
+        entity_ids = _normalize_entity_ids(call)
         target_volume = round(float(call.data.get('volume', 0)), 2)
         span = call.data.get('duration', 5)
         tasks = {}
@@ -119,7 +125,7 @@ async def async_setup(hass, config):
 
     async def async_cancel(call):
         """Cancel the volume adjustment for a specific entity or all."""
-        entity_ids = call.data.get('entity_id', [])
+        entity_ids = _normalize_entity_ids(call)
         if not entity_ids:
             for task in volume_tasks.values():
                 task.cancel()
